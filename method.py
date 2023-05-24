@@ -3,14 +3,19 @@ import numpy as np
 import os
 
 
-def filter_file_path(path, x_limit, y_limit, limit, isGreater):
+def filter_file_path(path, flue_x_limit, flue_y_limit, flue_z_limit, vent_x_limit, vent_y_limit, vent_z_limit, limit,
+                     isGreater):
     '''
     寻找文件目录下原始数据文件并进行数据筛选
     :param path: 文件目录路径
-    :param x_limit: 排烟道x方向限制
-    :param y_limit: 排烟道y方向限制
+    :param flue_x_limit: 排烟道x方向限制
+    :param flue_y_limit: 排烟道y方向限制
+    :param flue_z_limit: 排烟道z方向限制
+    :param vent_x_limit: 排烟口x方向限制
+    :param vent_y_limit: 排烟口y方向限制
+    :param vent_z_limit: 排烟口z方向限制
     :param limit: 风速限制
-    :param isGreater: 是否大于
+    :param isGreater: 判定条件
     '''
     fileList = os.listdir(path)
     flueList = []  # 排烟道文件列表
@@ -23,26 +28,34 @@ def filter_file_path(path, x_limit, y_limit, limit, isGreater):
             ventList.append(os.path.join(path, fileName).replace("\\", "/"))
         else:
             continue
+
+    # 文件名排序
+    ventList.sort(key=len)
+
     # 数据筛选
-    filter_flue_data(flueList, x_limit, y_limit, limit, isGreater)
-    filter_vent_data(ventList, limit, isGreater)
+    filter_flue_data(flueList, flue_x_limit, flue_y_limit, flue_z_limit, limit, isGreater)
+    filter_vent_data(ventList, vent_x_limit, vent_y_limit, vent_z_limit, limit, isGreater)
 
 
-def filter_flue_data(fileList, x_limit, y_limit, limit, isGreater):
+def filter_flue_data(fileList, x_limit, y_limit, z_limit, limit, isGreater):
     '''
     排烟道数据筛选
     :param fileList: 文件目录列表
     :param x_limit: 排烟道x方向限制
     :param y_limit: 排烟道y方向限制
+    :param z_limit: 排烟道z方向限制
     :param limit: 风速限制
-    :param isGreater: 是否大于
+    :param isGreater: 判定条件
     '''
     for fileName in fileList:
         filePath = os.path.dirname(fileName)
         # 判断风速限制
-        if isGreater:
+        if isGreater > 0:
             writer = pd.ExcelWriter(
                 '{}排烟道大于{}.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]).replace("\\", "/"), limit))
+        elif isGreater < 0:
+            writer = pd.ExcelWriter(
+                '{}排烟道小于{}.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]).replace("\\", "/"), limit))
         else:
             writer = pd.ExcelWriter(
                 '{}排烟道小于等于{}.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]).replace("\\", "/"), limit))
@@ -54,8 +67,12 @@ def filter_flue_data(fileList, x_limit, y_limit, limit, isGreater):
         partFilterList = []
         partSumList = []
         for i in range(len(x_limit)):
+            # 限制Z
+            a = df[df[:, 2] <= z_limit[i][1]]
+            a = a[z_limit[i][0] <= a[:, 2]]
+
             # 限制Y
-            a = df[df[:, 1] <= y_limit[i][1]]
+            a = a[a[:, 1] <= y_limit[i][1]]
             a = a[y_limit[i][0] <= a[:, 1]]
 
             # 限制X
@@ -63,12 +80,17 @@ def filter_flue_data(fileList, x_limit, y_limit, limit, isGreater):
             b = b[x_limit[i][0] <= b[:, 0]]
 
             # 限制U、V
-            if isGreater:
+            if isGreater > 0:
                 # U、V均大于limit
                 c = b[b[:, 3] > limit]
                 c = c[c[:, 4] > limit]
-            else:
+            elif isGreater < 0:
                 # U或V小于limit
+                c1 = b[b[:, 3] < limit]
+                c2 = b[b[:, 4] < limit]
+                c = np.vstack((c1, c2))
+            else:
+                # U或V小于等于limit
                 c1 = b[b[:, 3] <= limit]
                 c2 = b[b[:, 4] <= limit]
                 c = np.vstack((c1, c2))
@@ -94,12 +116,15 @@ def filter_flue_data(fileList, x_limit, y_limit, limit, isGreater):
         writer.save()
 
 
-def filter_vent_data(fileList, limit, isGreater):
+def filter_vent_data(fileList, x_limit, y_limit, z_limit, limit, isGreater):
     '''
     排烟口数据筛选
     :param fileList: 文件目录列表
+    :param x_limit: 排烟口x方向限制
+    :param y_limit: 排烟口y方向限制
+    :param z_limit: 排烟口z方向限制
     :param limit: 风速限制
-    :param isGreater: 是否大于
+    :param isGreater: 判定条件
     :return:
     '''
     partLeftFilterList = []
@@ -108,31 +133,51 @@ def filter_vent_data(fileList, limit, isGreater):
     partSumList = []
     filePath = os.path.dirname(fileList[0])
     NameList = [name.split('/')[-1] for name in fileList]
-    if isGreater:
+    if isGreater > 0:
         writer1 = pd.ExcelWriter('{}排烟口大于{}.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]), limit))
         writer2 = pd.ExcelWriter('{}排烟口大于{}-区分左右侧.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]), limit))
+    elif isGreater < 0:
+        writer1 = pd.ExcelWriter('{}排烟口小于{}.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]), limit))
+        writer2 = pd.ExcelWriter('{}排烟口小于{}-区分左右侧.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]), limit))
     else:
         writer1 = pd.ExcelWriter(
             '{}排烟口小于等于{}.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]), limit))
         writer2 = pd.ExcelWriter(
             '{}排烟口小于等于{}-区分左右侧.xlsx'.format(os.path.join(filePath, filePath.split('/')[-1]), limit))
-    for fileName in fileList:
+    for i, fileName in enumerate(fileList):
 
-        # 读取排烟道数据
+        # 读取排烟口数据
         df = pd.read_csv('{}'.format(fileName))[1:]
         for col in df.columns:
             df[col] = pd.to_numeric(df[col])
         df = df.to_numpy()
-
+        print(fileName, x_limit[i], y_limit[i], z_limit[i])
+        # 限制Z
+        a = df[df[:, 2] <= z_limit[i][1]]
+        a = a[z_limit[i][0] <= a[:, 2]]
+        # print('Z',a)
+        # 限制Y
+        a = a[a[:, 1] <= y_limit[i][1]]
+        a = a[y_limit[i][0] <= a[:, 1]]
+        # print('Y',a)
+        # 限制X
+        b = a[a[:, 0] <= x_limit[i][1]]
+        b = b[x_limit[i][0] <= b[:, 0]]
+        # print('X',b)
         # 限制U、V
-        if isGreater:
+        if isGreater > 0:
             # U、V均大于limit
-            c = df[df[:, 3] > limit]
+            c = b[b[:, 3] > limit]
             c = c[c[:, 4] > limit]
-        else:
+        elif isGreater < 0:
             # U或V小于limit
-            c1 = df[df[:, 3] <= limit]
-            c2 = df[df[:, 4] <= limit]
+            c1 = b[b[:, 3] < limit]
+            c2 = b[b[:, 4] < limit]
+            c = np.vstack((c1, c2))
+        else:
+            # U或V小于等于limit
+            c1 = b[b[:, 3] <= limit]
+            c2 = b[b[:, 4] <= limit]
             c = np.vstack((c1, c2))
 
         # 去重
